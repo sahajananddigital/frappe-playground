@@ -12,7 +12,7 @@ export const PYTHON_PACKAGES = [
     "phonenumbers", "premailer", "pyotp", "requests-oauthlib", "rsa",
     "sentry-sdk", "tenacity", "Pillow", "pytz", "requests", "urllib3",
     "nh3", "Babel", "MarkupSafe", "PyYAML", "beautifulsoup4",
-    "python-dateutil", "posthog", "pdfkit", "PyMySQL", "whoosh"
+    "python-dateutil", "pdfkit", "PyMySQL", "whoosh"
 ];
 
 export const BENCH_DIRECTORIES = [
@@ -37,5 +37,6 @@ export const SITE_CONFIG = {
     db_name: "site1",
     use_memory_cache: true,
     developer_mode: 1,
-    ignore_csrf: 1
+    ignore_csrf: 1,
+    enable_telemetry: 0
 };
