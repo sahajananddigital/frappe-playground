@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 test('Frappe WASM boots up without crashing', async ({ page }) => {
     // Navigate to the root URL (baseURL is set in playwright.config.js)
+    page.on('console', msg => console.log(`[BROWSER]: ${msg.text()}`));
     await page.goto('/');
 
     // Wait for the loading screen to disappear
