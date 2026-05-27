@@ -1,7 +1,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 // Frappe WASM Playground — Web Worker (Pyodide Runtime Sandbox)
 // ──────────────────────────────────────────────────────────────────────────────
-import { loadPyodide } from "/pyodide/pyodide.mjs";
+import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/dev/full/pyodide.mjs";
 import { PYTHON_PACKAGES, BENCH_DIRECTORIES, SITE_CONFIG } from "./config.js";
 
 let pyodide;

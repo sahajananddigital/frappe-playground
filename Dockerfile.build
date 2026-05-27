@@ -22,9 +22,12 @@ RUN pip download \
 # 3. Clone and clean Frappe 16 Core
 RUN git clone --branch version-16 --depth 1 https://github.com/frappe/frappe.git /workspace/frappe_src \
     && cd /workspace/frappe_src \
-    && rm -rf .git .github tests playbooks cypress node_modules frappe/tests frappe/commands frappe/coverage \
+    && rm -rf .git .github tests playbooks cypress frappe/tests frappe/commands frappe/coverage frappe/docs \
+    && find . -name "node_modules" -type d -prune -exec rm -rf '{}' + \
     && find . -name "*.pyc" -delete \
-    && find . -name "__pycache__" -delete
+    && find . -name "__pycache__" -delete \
+    && find . -name "*.md" -delete \
+    && find . -name "*.json" -path "*/package.json" -delete
 
 # 4. Assemble the flat runtime archive directory
 RUN mkdir -p /workspace/archive_root \
@@ -48,8 +51,9 @@ RUN bench init --frappe-branch version-16 --skip-redis-config-generation  --pyth
     && bench new-site playground.local --db-type sqlite --admin-password admin
 USER root
 # 6. Expose entry point compilation commands
-CMD cp -r /workspace/test-bench/env/lib/python3.14/site-packages/pypika /workspace/archive_root/ && \
+CMD find /workspace/test-bench/apps -name "node_modules" -type d -prune -exec rm -rf '{}' + && \
+    cp -r /workspace/test-bench/env/lib/python3.14/site-packages/pypika /workspace/archive_root/ && \
     tar -czf /output/frappe_runtime.tar.gz -C /workspace/archive_root . && \
-    tar -czhf /output/assets.tar.gz -C /workspace/test-bench/sites assets && \
+    tar --exclude="node_modules" --exclude="scss" --exclude="less" -czhf /output/assets.tar.gz -C /workspace/test-bench/sites assets && \
     cp /workspace/test-bench/sites/playground.local/db/*.db /output/site1.db && \
     echo "🎉 Compilation Complete! Assets copied out of container successfully."

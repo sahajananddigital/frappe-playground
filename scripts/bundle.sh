@@ -3,27 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-PYODIDE_VERSION="0.27.7"
-PYODIDE_URL="https://github.com/niccokunzmann/pyodide/releases/download/${PYODIDE_VERSION}/pyodide-${PYODIDE_VERSION}.tar.bz2"
-
-PYODIDE_DIR="${PROJECT_ROOT}/public/pyodide"
 WHEELS_DIR="${PROJECT_ROOT}/public/wheels"
-
-# ─── Pyodide Distribution ───────────────────────────────────────────
-if [ -f "${PYODIDE_DIR}/pyodide.mjs" ]; then
-    echo "✅ Pyodide already present, skipping download."
-else
-    echo "📦 Downloading Pyodide v${PYODIDE_VERSION}..."
-    TEMP_DIR=$(mktemp -d)
-    curl -L -o "${TEMP_DIR}/pyodide.tar.bz2" "${PYODIDE_URL}"
-
-    echo "📂 Extracting Pyodide..."
-    mkdir -p "${PYODIDE_DIR}"
-    tar -xjf "${TEMP_DIR}/pyodide.tar.bz2" -C "${PYODIDE_DIR}" --strip-components=1
-
-    rm -rf "${TEMP_DIR}"
-    echo "✅ Pyodide extracted to ${PYODIDE_DIR}"
-fi
 
 # ─── Dependency Wheels ──────────────────────────────────────────────
 mkdir -p "${WHEELS_DIR}"

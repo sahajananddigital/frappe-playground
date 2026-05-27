@@ -12,8 +12,7 @@ echo "📦 Extracting compiled production runtime targets..."
 # Mount host storage directory into container execution folder
 docker run --rm \
     -v "$STORAGE_DIR:/output" \
-    frappe-wasm-compiler:latest \
-    /bin/sh -c "cp -r /workspace/test-bench/env/lib/python3.14/site-packages/pypika /workspace/archive_root/ && tar -czf /output/frappe_runtime.tar.gz -C /workspace/archive_root . && tar -czhf /output/assets.tar.gz -C /workspace/test-bench/sites assets && cp /workspace/test-bench/sites/playground.local/db/*.db /output/site1.db && echo '🎉 Compilation Complete!'"
+    frappe-wasm-compiler:latest
 
 echo "📂 Extracting frontend assets..."
 tar -xzf storage/assets.tar.gz -C storage/
