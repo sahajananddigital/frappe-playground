@@ -1,4 +1,4 @@
-import io, json, traceback, os
+import io, json, traceback, os, sys
 import frappe
 from frappe.app import application
 
@@ -113,6 +113,31 @@ def handle_request(req):
 
         if hasattr(result_iter, "close"):
             result_iter.close()
+
+        if (
+            req["path"] == "/api/method/frappe.desk.page.setup_wizard.setup_wizard.setup_complete"
+            and _status.startswith("2")
+        ):
+            # Frappe marks the app setup-complete after its own setup commit in this
+            # WASM/SQLite path. Persist the final flags before the redirect to /desk.
+            import sqlite3
+
+            conn = sqlite3.connect("/home/pyodide/bench/sites/site1/db/site1.db")
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute(
+                    "update 'tabInstalled Application' set is_setup_complete=1 where app_name='frappe'"
+                )
+                conn.execute(
+                    "update tabSingles set value='1' where doctype='System Settings' and field='setup_complete'"
+                )
+                conn.execute(
+                    "update tabDefaultValue set defvalue='workspace' where parent='__default' and defkey='desktop:home_page'"
+                )
+                conn.commit()
+                globals().get("_dummy_redis_store", {}).clear()
+            finally:
+                conn.close()
 
     except Exception as e:
         tb = traceback.format_exc()

@@ -3,14 +3,13 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 async function initPlayground() {
-    // Use a session cookie to determine if this is the first tab opened in this browser session.
-    // Session cookies are cleared when the browser is fully closed, which perfectly matches
-    // the requirement to "persist sqlite for tabs session and keep it alive until use close browser".
-    const hasSessionCookie = document.cookie.includes("frappe_session_active=1");
-    let freshSession = !hasSessionCookie;
-    
-    if (freshSession) {
-        document.cookie = "frappe_session_active=1; path=/";
+    const sessionKey = "frappe_playground_instance_id";
+    let instanceId = sessionStorage.getItem(sessionKey);
+    const freshSession = !instanceId;
+
+    if (!instanceId) {
+        instanceId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        sessionStorage.setItem(sessionKey, instanceId);
     }
 
     // 1. Register the Service Worker to intercept all network requests for routing to Python WSGI
@@ -25,17 +24,17 @@ async function initPlayground() {
     
     // 3. Establish a direct MessageChannel for high-performance communication
     const channel = new MessageChannel();
-    navigator.serviceWorker.controller.postMessage({ type: 'INIT_CHANNEL' }, [channel.port1]);
+    navigator.serviceWorker.controller.postMessage({ type: 'INIT_CHANNEL', scope: instanceId }, [channel.port1]);
     
-    // Pass the freshSession flag to the worker.
-    pyWorker.postMessage({ type: 'INIT_CHANNEL', freshSession }, [channel.port2]);
+    // Pass the tab-scoped instance id so reloads restore this tab without sharing state across tabs.
+    pyWorker.postMessage({ type: 'INIT_CHANNEL', freshSession, scope: instanceId }, [channel.port2]);
 
     // 4. Listen for the Web Worker to finish its complex python bootstrap sequence
     pyWorker.onmessage = (e) => {
         if (e.data.type === 'READY') {
             document.getElementById('loading-screen').style.display = 'none';
             const deskIframe = document.getElementById('frappe-desk');
-            deskIframe.src = '/app';
+            deskIframe.src = `/?__scope=${encodeURIComponent(instanceId)}`;
             deskIframe.style.display = 'block';
         }
     };

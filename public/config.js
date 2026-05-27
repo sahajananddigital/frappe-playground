@@ -5,10 +5,12 @@
 export const SITE_CONFIG = {
     db_type: "sqlite",
     db_name: "site1",
-    use_memory_cache: true,
     developer_mode: 1,
     ignore_csrf: 1,
-    enable_telemetry: 0
+    enable_telemetry: 0,
+    pause_scheduler: 1,
+    disable_async: 1,
+    trigger_site_setup_in_background: 0
 };
 
 export const BENCH_DIRECTORIES = [

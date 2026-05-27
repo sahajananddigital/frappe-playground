@@ -8,6 +8,7 @@
     "build": "bash scripts/build.sh",
     "bundle": "bash scripts/bundle.sh",
     "test": "playwright test",
+    "test:e2e": "playwright test tests/e2e",
     "debug:vfs": "node tests/debug/inspect_vfs.js",
     "debug:memory": "node tests/debug/inspect_memory.js"
   },

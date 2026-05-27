@@ -43,6 +43,9 @@ class DummyRedisClass:
     def ping(self, *a, **k):
         return True
 
+    def publish(self, channel, message, *a, **k):
+        return 0
+
     def get(self, key, *a, **k):
         return _dummy_redis_store.get(key)
         
