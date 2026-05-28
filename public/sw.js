@@ -7,6 +7,9 @@ self.addEventListener("activate", (event) => event.waitUntil(clients.claim()));
 
 const instances = new Map();
 const clientScopes = new Map();
+const STATIC_PATH_PREFIXES = ["/storage", "/assets", "/wheels", "/pyodide", "/python"];
+const BACKEND_READY_TIMEOUT_MS = 90000;
+const BACKEND_READY_POLL_MS = 100;
 
 function parseScopedPath(pathname) {
     const match = pathname.match(/^\/scope:([^/]+)(\/.*)?$/);
@@ -33,13 +36,7 @@ function queryWithoutScope(url) {
 }
 
 function isStaticPath(pathname) {
-    return (
-        pathname.startsWith("/storage") ||
-        pathname.startsWith("/assets") ||
-        pathname.startsWith("/wheels") ||
-        pathname.startsWith("/pyodide") ||
-        pathname.startsWith("/python")
-    );
+    return STATIC_PATH_PREFIXES.some(prefix => pathname.startsWith(prefix));
 }
 
 self.addEventListener("message", (event) => {
@@ -97,12 +94,12 @@ async function handleFetch(event) {
         const strippedUrl = new URL(event.request.url);
         strippedUrl.pathname = requestPath;
         strippedUrl.searchParams.delete("__scope");
-        const reqOpts = {
+        const requestOptions = {
             method: event.request.method,
             headers: event.request.headers,
             credentials: event.request.credentials
         };
-        return fetch(strippedUrl.href, reqOpts);
+        return fetch(strippedUrl.href, requestOptions);
     }
     
 
@@ -146,21 +143,11 @@ async function callPythonHandler(req, scope, requestPath, query) {
         return new Response("Service Worker not fully initialized for this tab", { status: 503 });
     }
     
-    // Wait for the worker to be ready if it isn't yet
-    if (!instance.ready) {
-        console.log("[SW] Waiting for Pyodide worker to be ready:", scope);
-        let attempts = 0;
-        while (!instance.ready && attempts < 900) {
-            await new Promise(r => setTimeout(r, 100));
-            attempts++;
-        }
-        if (!instance.ready) {
-            console.error("[SW] Pyodide worker not ready after 90s. Aborting request:", requestPath);
-            return new Response("Pyodide backend timeout", { status: 504 });
-        }
+    if (!await waitForInstanceReady(instance, scope)) {
+        console.error("[SW] Pyodide worker not ready after 90s. Aborting request:", requestPath);
+        return new Response("Pyodide backend timeout", { status: 504 });
     }
 
-    const url = new URL(req.url);
     const payload = {
         method: req.method,
         path: requestPath,
@@ -187,4 +174,16 @@ async function callPythonHandler(req, scope, requestPath, query) {
         };
         instance.port.postMessage(payload, [channel.port2]);
     });
+}
+
+async function waitForInstanceReady(instance, scope) {
+    if (instance.ready) return true;
+
+    console.log("[SW] Waiting for Pyodide worker to be ready:", scope);
+    const deadline = Date.now() + BACKEND_READY_TIMEOUT_MS;
+    while (!instance.ready && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, BACKEND_READY_POLL_MS));
+    }
+
+    return instance.ready;
 }

@@ -1,12 +1,15 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Clear older outputs and ensure folder exists
-STORAGE_DIR="$(pwd)/storage"
-rm -rf storage && mkdir -p storage
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+STORAGE_DIR="${PROJECT_ROOT}/storage"
+
+rm -rf "${STORAGE_DIR}"
+mkdir -p "${STORAGE_DIR}"
 
 echo "🛠️  Building compilation image..."
-docker build -t frappe-wasm-compiler -f Dockerfile.build .
+docker build -t frappe-wasm-compiler -f "${PROJECT_ROOT}/Dockerfile.build" "${PROJECT_ROOT}"
 
 echo "📦 Extracting compiled production runtime targets..."
 # Mount host storage directory into container execution folder
@@ -15,6 +18,6 @@ docker run --rm \
     frappe-wasm-compiler:latest
 
 echo "📂 Extracting frontend assets..."
-tar -xzf storage/assets.tar.gz -C storage/
-rm storage/assets.tar.gz
+tar -xzf "${STORAGE_DIR}/assets.tar.gz" -C "${STORAGE_DIR}/"
+rm "${STORAGE_DIR}/assets.tar.gz"
 echo "✅ Build complete!"

@@ -11,8 +11,29 @@ let instanceScope = "default";
 let persistedCookieJarJson = null;
 
 // Static runtime files are served from /storage; browser assets are served from /assets.
-const STORAGE_ENDPOINT = `${self.location.origin}/storage`;
-const ASSETS_ENDPOINT = `${self.location.origin}/assets`;
+const ORIGIN = self.location.origin;
+const STORAGE_ENDPOINT = `${ORIGIN}/storage`;
+const ASSETS_ENDPOINT = `${ORIGIN}/assets`;
+const SITE_ROOT = "/home/pyodide/bench/sites";
+const SITE_NAME = "site1";
+const SITE_DB_DIR = `${SITE_ROOT}/${SITE_NAME}/db`;
+const SITE_DB_PATH = `${SITE_DB_DIR}/${SITE_NAME}.db`;
+const ASSETS_JSON_PATH = `${SITE_ROOT}/assets/assets.json`;
+const LOCAL_WHEELS = [
+    {
+        url: `${ORIGIN}/wheels/docopt-0.6.2-py2.py3-none-any.whl`,
+        fsPath: "/home/pyodide/docopt-0.6.2-py2.py3-none-any.whl",
+    },
+    {
+        url: `${ORIGIN}/wheels/num2words-0.5.14-py3-none-any.whl`,
+        fsPath: "/home/pyodide/num2words-0.5.14-py3-none-any.whl",
+    },
+];
+const STATIC_SITE_FILES = {
+    [`${SITE_ROOT}/apps.txt`]: "frappe\n",
+    [`${SITE_ROOT}/currentsite.txt`]: `${SITE_NAME}\n`,
+    [`${SITE_ROOT}/${SITE_NAME}/site_config.json`]: JSON.stringify(SITE_CONFIG),
+};
 
 // ─── Custom IndexedDB Persistence ──────────────────────────────────
 // We use a custom IndexedDB sync mechanism instead of Emscripten IDBFS because
@@ -38,6 +59,47 @@ function requestToPromise(req) {
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
+}
+
+async function fetchOk(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+    }
+    return response;
+}
+
+async function fetchBinary(url) {
+    const response = await fetchOk(url);
+    return new Uint8Array(await response.arrayBuffer());
+}
+
+async function fetchText(url) {
+    const response = await fetchOk(url);
+    return response.text();
+}
+
+function ensureDirectories(paths) {
+    for (const path of paths) {
+        try {
+            pyodide.FS.mkdir(path);
+        } catch (_) {
+            // Directory already exists.
+        }
+    }
+}
+
+async function installLocalWheels() {
+    const wheelFiles = await Promise.all(LOCAL_WHEELS.map(wheel => fetchBinary(wheel.url)));
+
+    LOCAL_WHEELS.forEach((wheel, index) => {
+        pyodide.FS.writeFile(wheel.fsPath, wheelFiles[index]);
+    });
+
+    const micropip = pyodide.pyimport("micropip");
+    for (const wheel of LOCAL_WHEELS) {
+        await micropip.install(`emfs://${wheel.fsPath}`);
+    }
 }
 
 async function saveStateToIDB(dbPath, cookieJarJson = "{}") {
@@ -227,74 +289,55 @@ async function initPyodideAndPackages() {
 
 async function fetchAndMountFilesystem() {
     self.postMessage({ type: "LOG", message: "Fetching Frappe runtime..." });
-    const [codeRes, docoptRes, num2wordsRes, assetsRes] = await Promise.all([
-        fetch(`${STORAGE_ENDPOINT}/frappe_runtime.tar.gz`),
-        fetch(`${self.location.origin}/wheels/docopt-0.6.2-py2.py3-none-any.whl`),
-        fetch(`${self.location.origin}/wheels/num2words-0.5.14-py3-none-any.whl`),
-        fetch(`${ASSETS_ENDPOINT}/assets.json`),
+    const [codeArr, assetsJson] = await Promise.all([
+        fetchBinary(`${STORAGE_ENDPOINT}/frappe_runtime.tar.gz`),
+        fetchText(`${ASSETS_ENDPOINT}/assets.json`),
     ]);
-
-    const codeArr = new Uint8Array(await codeRes.arrayBuffer());
-    const docoptArr = new Uint8Array(await docoptRes.arrayBuffer());
-    const num2wordsArr = new Uint8Array(await num2wordsRes.arrayBuffer());
-    const assetsJson = await assetsRes.text();
 
     self.postMessage({ type: "LOG", message: "Mounting virtual filesystem..." });
     pyodide.FS.mkdir("/home/pyodide/frappe_env");
     pyodide.unpackArchive(codeArr, "gztar", { extractDir: "/home/pyodide/frappe_env" });
-
-    // Write wheels to FS for emfs:// install
-    pyodide.FS.writeFile("/home/pyodide/docopt-0.6.2-py2.py3-none-any.whl", docoptArr);
-    pyodide.FS.writeFile("/home/pyodide/num2words-0.5.14-py3-none-any.whl", num2wordsArr);
-    
-    const micropip = pyodide.pyimport("micropip");
-    await micropip.install("emfs:///home/pyodide/docopt-0.6.2-py2.py3-none-any.whl");
-    await micropip.install("emfs:///home/pyodide/num2words-0.5.14-py3-none-any.whl");
+    await installLocalWheels();
 
     // Create Bench directory structure
-    for (const d of BENCH_DIRECTORIES) {
-        try { pyodide.FS.mkdir(d); } catch (_) { /* exists */ }
-    }
+    ensureDirectories(BENCH_DIRECTORIES);
 
     // ─── Database Persistence ───────────────────────────────────────────────
     // Fresh tabs get a seed database. Reloads restore this tab's atomic snapshot.
     
-    const dbDir = "/home/pyodide/bench/sites/site1/db";
-    const dbPath = `${dbDir}/site1.db`;
     let dataLoaded = false;
     
     if (!isFreshSession) {
         self.postMessage({ type: "LOG", message: "Restoring isolated database..." });
-        dataLoaded = await loadStateFromIDB(dbPath);
+        dataLoaded = await loadStateFromIDB(SITE_DB_PATH);
     }
     
     if (isFreshSession || !dataLoaded) {
         self.postMessage({ type: "LOG", message: "Seeding fresh database..." });
-        const dbRes = await fetch(`${STORAGE_ENDPOINT}/site1.db`);
-        const dbArr = new Uint8Array(await dbRes.arrayBuffer());
-        pyodide.FS.writeFile(dbPath, dbArr);
+        const dbArr = await fetchBinary(`${STORAGE_ENDPOINT}/site1.db`);
+        pyodide.FS.writeFile(SITE_DB_PATH, dbArr);
 
-        await resetFreshSiteSetupState(dbPath);
+        await resetFreshSiteSetupState(SITE_DB_PATH);
         
         // Save the seed immediately to IndexedDB
-        await saveStateToIDB(dbPath);
+        await saveStateToIDB(SITE_DB_PATH);
     } else {
-        await repairCompletedSiteDefaults(dbPath);
+        await repairCompletedSiteDefaults(SITE_DB_PATH);
     }
 
     // Write config files (these are static and always come from the server)
-    pyodide.FS.writeFile("/home/pyodide/bench/sites/assets/assets.json", assetsJson);
-    pyodide.FS.writeFile("/home/pyodide/bench/sites/apps.txt", "frappe\n");
-    pyodide.FS.writeFile("/home/pyodide/bench/sites/currentsite.txt", "site1\n");
-    pyodide.FS.writeFile("/home/pyodide/bench/sites/site1/site_config.json", JSON.stringify(SITE_CONFIG));
+    pyodide.FS.writeFile(ASSETS_JSON_PATH, assetsJson);
+    for (const [path, contents] of Object.entries(STATIC_SITE_FILES)) {
+        pyodide.FS.writeFile(path, contents);
+    }
 }
 
 async function configureFrappeEnvironment() {
     self.postMessage({ type: "LOG", message: "Configuring Python environment..." });
     
     const [mocksRes, wsgiRes] = await Promise.all([
-        fetch('/python/frappe_mocks.py'),
-        fetch('/python/wsgi_server.py')
+        fetchOk("/python/frappe_mocks.py"),
+        fetchOk("/python/wsgi_server.py"),
     ]);
 
     const mocksCode = await mocksRes.text();
@@ -355,9 +398,8 @@ self.onmessage = async (event) => {
                 const shouldPersist = !["GET", "HEAD", "OPTIONS"].includes(req.method) || hasSetCookie;
 
                 if (shouldPersist) {
-                    const dbPath = "/home/pyodide/bench/sites/site1/db/site1.db";
-                    await checkpointDatabase(dbPath);
-                    await saveStateToIDB(dbPath, await exportCookieJarJson());
+                    await checkpointDatabase(SITE_DB_PATH);
+                    await saveStateToIDB(SITE_DB_PATH, await exportCookieJarJson());
                 }
                 
                 let bodyLog = "[empty body]";

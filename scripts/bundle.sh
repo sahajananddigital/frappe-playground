@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -10,7 +10,8 @@ mkdir -p "${WHEELS_DIR}"
 
 download_wheel() {
     local url="$1"
-    local filename="$(basename "$url")"
+    local filename
+    filename="$(basename "$url")"
     if [ -f "${WHEELS_DIR}/${filename}" ]; then
         echo "  ✅ ${filename} already present"
     else

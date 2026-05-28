@@ -4,7 +4,7 @@
   "description": "Frappe WASM Playground — Run Frappe Framework in the browser via Pyodide",
   "main": "server.js",
   "scripts": {
-    "dev": "node server.js",
+    "start": "node server.js",
     "build": "bash scripts/build.sh",
     "bundle": "bash scripts/bundle.sh",
     "deploy": "bash scripts/deploy.sh",
