@@ -1,0 +1,57 @@
+#!/bin/bash
+# Script to verify Cloudflare Pages deployment limits
+
+echo "Checking Cloudflare Pages deployment limits..."
+
+# Limits
+MAX_FILES=20000
+MAX_FILE_SIZE_MB=25
+
+# Directories to check (assuming 'public' and 'storage' will be deployed)
+DIRS_TO_CHECK=("public" "storage")
+
+TOTAL_FILES=0
+LARGE_FILES_FOUND=0
+
+for DIR in "${DIRS_TO_CHECK[@]}"; do
+  if [ -d "$DIR" ]; then
+    # Count files
+    COUNT=$(find "$DIR" -type f | wc -l | tr -d ' ')
+    TOTAL_FILES=$((TOTAL_FILES + COUNT))
+
+    # Find large files
+    LARGE_FILES=$(find "$DIR" -type f -size +${MAX_FILE_SIZE_MB}M)
+    if [ ! -z "$LARGE_FILES" ]; then
+      echo "⚠️  WARNING: Found files larger than ${MAX_FILE_SIZE_MB}MB in $DIR:"
+      find "$DIR" -type f -size +${MAX_FILE_SIZE_MB}M -exec ls -lh {} +
+      LARGE_FILES_FOUND=1
+    fi
+  fi
+done
+
+echo "----------------------------------------"
+echo "Total files count: $TOTAL_FILES / $MAX_FILES"
+
+if [ $TOTAL_FILES -gt $MAX_FILES ]; then
+  echo "❌ ERROR: Total file count exceeds Cloudflare Pages limit of $MAX_FILES files."
+  EXIT_CODE=1
+else
+  echo "✅ File count is within limits."
+  EXIT_CODE=0
+fi
+
+if [ $LARGE_FILES_FOUND -eq 1 ]; then
+  echo "❌ ERROR: Found one or more files exceeding the ${MAX_FILE_SIZE_MB}MB limit."
+  EXIT_CODE=1
+else
+  echo "✅ All files are within the size limit."
+fi
+
+echo "----------------------------------------"
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "✅ Deployment size/count check passed."
+else
+  echo "❌ Deployment size/count check failed."
+fi
+
+exit $EXIT_CODE

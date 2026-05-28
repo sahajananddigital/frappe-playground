@@ -10,7 +10,8 @@
     "test": "playwright test",
     "test:e2e": "playwright test tests/e2e",
     "debug:vfs": "node tests/debug/inspect_vfs.js",
-    "debug:memory": "node tests/debug/inspect_memory.js"
+    "debug:memory": "node tests/debug/inspect_memory.js",
+    "check-limits": "bash scripts/check-cf-limits.sh"
   },
   "dependencies": {
     "express": "^4.22.2",
