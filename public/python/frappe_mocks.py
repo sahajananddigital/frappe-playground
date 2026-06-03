@@ -22,6 +22,61 @@ def create_mock(name, **kwargs):
 class DummyClass:
     pass
 
+class DummyCallback:
+    def __init__(self, func=None, *a, **k):
+        self.func = func
+
+    def __call__(self, *a, **k):
+        if self.func:
+            return self.func(*a, **k)
+
+class DummyJobStatus:
+    QUEUED = "queued"
+    STARTED = "started"
+    FINISHED = "finished"
+    FAILED = "failed"
+
+class DummyJob:
+    def __init__(self, id=None, kwargs=None, status=DummyJobStatus.FINISHED, *a, **k):
+        self.id = id
+        self.kwargs = kwargs or {}
+        self._status = status
+
+    def get_status(self, refresh=False):
+        return self._status
+
+    def delete(self):
+        return None
+
+    @classmethod
+    def fetch(cls, *a, **k):
+        raise sys.modules["rq.exceptions"].NoSuchJobError()
+
+    @classmethod
+    def fetch_many(cls, *a, **k):
+        return []
+
+class DummyQueue:
+    def __init__(self, name="default", connection=None, is_async=True, *a, **k):
+        self.name = name
+        self.connection = connection
+        self.is_async = is_async
+        self.jobs = []
+        self.count = 0
+        self.failed_job_registry = DummyClass()
+        self.failed_job_registry.get_job_ids = lambda *a, **k: []
+
+    @classmethod
+    def all(cls, connection=None, *a, **k):
+        return []
+
+    def enqueue_call(self, func, kwargs=None, job_id=None, *a, **k):
+        kwargs = kwargs or {}
+        job = DummyJob(id=job_id, kwargs=kwargs, status=DummyJobStatus.FINISHED)
+        self.jobs.append(job)
+        self.count = len(self.jobs)
+        return job
+
 class DummyRedisConnection:
     def __init__(self, *a, **k):
         pass
@@ -225,14 +280,14 @@ class DummyDequeueStrategy:
     DEFAULT = None
 
 rq_mod = create_mock("rq",
-    Queue=DummyClass, Worker=DummyClass, Callback=DummyClass,
+    Queue=DummyQueue, Worker=DummyClass, Callback=DummyCallback,
     get_current_job=lambda *a, **k: None
 )
 rq_mod.defaults = create_mock("rq.defaults", DEFAULT_WORKER_TTL=420)
 rq_mod.exceptions = create_mock("rq.exceptions",
     InvalidJobOperation=Exception, NoSuchJobError=Exception
 )
-rq_mod.job = create_mock("rq.job", Job=DummyClass, JobStatus=DummyClass)
+rq_mod.job = create_mock("rq.job", Job=DummyJob, JobStatus=DummyJobStatus)
 rq_mod.logutils = create_mock("rq.logutils",
     setup_loghandlers=lambda *a, **k: None
 )
