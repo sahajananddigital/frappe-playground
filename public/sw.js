@@ -7,6 +7,7 @@ self.addEventListener("activate", (event) => event.waitUntil(clients.claim()));
 
 const instances = new Map();
 const clientScopes = new Map();
+const STATIC_PATHS = new Set(["/worker.js", "/config.js", "/playground.js", "/sw.js"]);
 const STATIC_PATH_PREFIXES = ["/storage", "/assets", "/pyodide", "/python"];
 const NODE_MODULES_ASSET_PREFIX = "/assets/frappe/node_modules/";
 const DEPLOY_SAFE_NODE_MODULES_ASSET_PREFIX = "/assets/frappe/runtime_modules/";
@@ -31,6 +32,21 @@ function scopeFromUrl(url) {
     return url.searchParams.get("__scope");
 }
 
+function onlyActiveScope() {
+    return instances.size === 1 ? instances.keys().next().value : null;
+}
+
+function shouldRecoverScopeForNavigation(request, pathname) {
+    if (request.mode !== "navigate") return false;
+    if (isShellPath(pathname)) return false;
+    if (isStaticPath(pathname)) return false;
+    return true;
+}
+
+function isShellPath(pathname) {
+    return pathname === "/" || pathname === "/index.html";
+}
+
 function queryWithoutScope(url) {
     const params = new URLSearchParams(url.search);
     params.delete("__scope");
@@ -38,6 +54,7 @@ function queryWithoutScope(url) {
 }
 
 function isStaticPath(pathname) {
+    if (STATIC_PATHS.has(pathname)) return true;
     return STATIC_PATH_PREFIXES.some(prefix => pathname.startsWith(prefix));
 }
 
@@ -70,6 +87,14 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
     if (event.request.url.startsWith(self.location.origin)) {
+        const url = new URL(event.request.url);
+        const scopedPath = parseScopedPath(url.pathname);
+        const requestPath = scopedPath?.path || url.pathname;
+
+        if (!scopedPath && !scopeFromUrl(url) && isStaticPath(requestPath)) {
+            return;
+        }
+
         event.respondWith(handleFetch(event));
     }
 });
@@ -85,8 +110,14 @@ async function handleFetch(event) {
     const referrerPath = referrerUrl ? parseScopedPath(referrerUrl.pathname) : null;
     const clientUrl = event.clientId ? await getClientUrl(event.clientId) : null;
     const clientScope = clientUrl ? scopeFromUrl(clientUrl) || parseScopedPath(clientUrl.pathname)?.scope : null;
-    const scope = scopedPath?.scope || scopeFromUrl(url) || clientScopes.get(event.clientId) || clientScope || referrerPath?.scope || (referrerUrl && scopeFromUrl(referrerUrl));
     const requestPath = scopedPath?.path || url.pathname;
+    const scope = scopedPath?.scope
+        || scopeFromUrl(url)
+        || clientScopes.get(event.clientId)
+        || clientScope
+        || referrerPath?.scope
+        || (referrerUrl && scopeFromUrl(referrerUrl))
+        || (shouldRecoverScopeForNavigation(event.request, requestPath) && onlyActiveScope());
 
     if (scope) {
         if (event.clientId) {
@@ -182,11 +213,29 @@ async function callPythonHandler(req, scope, requestPath, query) {
             resHeaders.set("Cross-Origin-Resource-Policy", "same-origin");
             resHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
             resHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+            scopeRedirectLocation(resHeaders, scope);
             // Pyodide responses might be plain text or HTML; let browser guess if not set
             resolve(new Response(body, { status, headers: resHeaders }));
         };
         instance.port.postMessage(payload, [channel.port2]);
     });
+}
+
+function scopeRedirectLocation(headers, scope) {
+    const location = headers.get("Location");
+    if (!location || !scope) return;
+
+    try {
+        const scopedLocation = new URL(location, self.location.origin);
+        if (scopedLocation.origin !== self.location.origin) return;
+        if (isShellPath(scopedLocation.pathname)) return;
+        if (isStaticPath(scopedLocation.pathname)) return;
+
+        scopedLocation.searchParams.set("__scope", scope);
+        headers.set("Location", `${scopedLocation.pathname}${scopedLocation.search}${scopedLocation.hash}`);
+    } catch (_) {
+        // Leave malformed/non-URL Location headers untouched.
+    }
 }
 
 async function waitForInstanceReady(instance, scope) {

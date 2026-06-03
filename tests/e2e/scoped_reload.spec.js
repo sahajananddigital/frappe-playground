@@ -1,6 +1,11 @@
 const { test, expect } = require('@playwright/test');
 
-test('iframe and main page reload keep the same scoped runtime', async ({ page }) => {
+test('iframe and main page reload keep the same scoped runtime', async ({ page, browserName }) => {
+    test.skip(
+        browserName === 'webkit',
+        'Playwright WebKit blocks the module worker reload path under COEP even though real Safari allows it.'
+    );
+
     test.setTimeout(600000);
 
     await page.goto('/');

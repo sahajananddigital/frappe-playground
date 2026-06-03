@@ -12,7 +12,7 @@
     "predeploy": "npm run deploy:prepare",
     "deploy": "bash scripts/deploy.sh",
     "test": "npm run test:e2e",
-    "test:e2e": "playwright test tests/e2e",
+    "test:e2e": "playwright test tests/e2e --project=chromium --project=webkit",
     "debug:vfs": "node tests/debug/inspect_vfs.js",
     "debug:memory": "node tests/debug/inspect_memory.js"
   },

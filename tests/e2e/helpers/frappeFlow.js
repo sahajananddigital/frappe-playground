@@ -83,7 +83,13 @@ async function waitForSetupWizardOrDesk(page) {
     let state = 'loading';
 
     await expect.poll(async () => {
-        const deskState = await readDeskState(page);
+        let deskState;
+
+        try {
+            deskState = await readDeskState(page);
+        } catch (_) {
+            return 'loading';
+        }
 
         if (deskState.hasSetupWizard) {
             state = 'wizard';

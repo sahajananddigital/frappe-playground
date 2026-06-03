@@ -10,6 +10,7 @@ const frontendAssetsDir = path.join(publicDir, 'frontend')
 const isolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
   'Access-Control-Allow-Origin': '*',
 }
 

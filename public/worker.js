@@ -1,8 +1,9 @@
 // ──────────────────────────────────────────────────────────────────────────────
 // Frappe Playground — Web Worker (Pyodide Runtime Sandbox)
 // ──────────────────────────────────────────────────────────────────────────────
-import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/dev/full/pyodide.mjs";
 import { PYTHON_PACKAGES, BENCH_DIRECTORIES, SITE_CONFIG } from "./config.js";
+
+const PYODIDE_BASE_URL = "https://cdn.jsdelivr.net/pyodide/dev/full/";
 
 let pyodide;
 let fromServiceWorkerPort;
@@ -246,7 +247,8 @@ async function bootPython() {
 
 async function initPyodideAndPackages() {
     self.postMessage({ type: "LOG", message: "Loading Pyodide..." });
-    pyodide = await loadPyodide();
+    await loadPyodideLoaderFromCdn();
+    pyodide = await loadPyodide({ indexURL: PYODIDE_BASE_URL });
 
     // Globally suppress Python 3.12+ SyntaxWarnings (like whoosh's invalid escape sequences) 
     // before any packages are installed or compiled.
@@ -262,6 +264,23 @@ async function initPyodideAndPackages() {
     self.postMessage({ type: "LOG", message: "Installing Python dependencies..." });
     const micropip = pyodide.pyimport("micropip");
     await micropip.install(PYTHON_PACKAGES, { keep_going: true });
+}
+
+async function loadPyodideLoaderFromCdn() {
+    if (self.loadPyodide) return;
+
+    const loaderUrl = `${PYODIDE_BASE_URL}pyodide.js`;
+    const response = await fetch(loaderUrl, { mode: "cors" });
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${loaderUrl}: ${response.status} ${response.statusText}`);
+    }
+
+    const loaderSource = await response.text();
+    (0, eval)(`${loaderSource}\n//# sourceURL=${loaderUrl}`);
+
+    if (!self.loadPyodide) {
+        throw new Error("Pyodide CDN loader did not expose loadPyodide.");
+    }
 }
 
 async function fetchAndMountFilesystem() {
