@@ -1,7 +1,6 @@
-<p align="center"><img width="250" src=".github/frappe-playground-logo.svg"></p>
+<p align="center"><img width="250" src=".github/logo.svg"></p>
 
-<video src=".github/frappe-playground-demo.mp4" autoplay loop muted playsinline width="100%">
-</video>
+![Frappe Playground](.github/banner.jpg)
 
 # Frappe Playground
 
