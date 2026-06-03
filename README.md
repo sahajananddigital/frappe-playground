@@ -134,3 +134,15 @@ npm run deploy
 ```
 
 `npm run deploy` also runs `predeploy`, which prepares the runtime and frontend before publishing with `scripts/deploy.sh`.
+
+## Meet Your Artisans
+
+[LUBUS](https://lubus.in/?utm_source=github&utm_medium=open-source&utm_campaign=frappe-playground) is a web design agency based in Mumbai.
+
+<a href="https://cal.com/lubus">
+<img src="https://raw.githubusercontent.com/lubusIN/.github/refs/heads/main/profile/banner.png" />
+</a>
+
+## License
+
+Frappe Playground is open-sourced licensed under the [MIT License](LICENSE).
