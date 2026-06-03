@@ -1,6 +1,14 @@
+<p align="center"><img width="250" src=".github/frappe-playground-logo.svg"></p>
+
+<video src=".github/frappe-playground-demo.mp4" autoplay loop muted playsinline width="100%">
+</video>
+
 # Frappe Playground
 
 Run the Frappe Framework in the browser with Pyodide and WebAssembly. The playground serves a Vue shell, boots Frappe inside a Web Worker, and routes same-origin Frappe requests through a Service Worker into Python WSGI. Runtime state is kept in the browser, so a tab can reload without needing a traditional Python server.
+
+> [!CAUTION]
+> Project is currently experimental and under active development.
 
 ## Overview
 
