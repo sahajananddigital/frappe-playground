@@ -101,19 +101,27 @@ if not hasattr(redis.Connection, "register_connect_callback"):
     if hasattr(redis, "UnixDomainSocketConnection"):
         redis.UnixDomainSocketConnection.register_connect_callback = _register_connect_callback
 
+# Use a shared server so all Frappe Redis connections share the same in-memory dataset
+shared_server = fakeredis.FakeServer()
+
 class FakeRedisWrapper(fakeredis.FakeRedis):
     def __init__(self, *args, **kwargs):
         kwargs.pop("connection_class", None)
         kwargs.pop("_invalidator_id", None)
+        kwargs["decode_responses"] = False
+        kwargs.setdefault("server", shared_server)
         super().__init__(*args, **kwargs)
 
     @classmethod
     def from_url(cls, *args, **kwargs):
         kwargs.pop("connection_class", None)
         kwargs.pop("_invalidator_id", None)
+        kwargs["decode_responses"] = False
+        kwargs.setdefault("server", shared_server)
         return super().from_url(*args, **kwargs)
 
 redis.Redis = FakeRedisWrapper
+redis.StrictRedis = FakeRedisWrapper
 redis.from_url = FakeRedisWrapper.from_url
 
 # Prevent threading crashes in Pyodide when Frappe tries to run the Redis invalidator thread
