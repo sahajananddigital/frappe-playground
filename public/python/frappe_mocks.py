@@ -19,8 +19,21 @@ def create_mock(name, **kwargs):
     sys.modules[name] = m
     return m
 
-class DummyClass:
-    pass
+class AbsorbingMock:
+    """A bulletproof mock that safely swallows any attribute access, method call, or iteration."""
+    def __init__(self, *a, **k): pass
+    def __getattr__(self, name): return self
+    def __call__(self, *a, **k): return self
+    def __iter__(self): return iter([])
+    def __len__(self): return 0
+    def __bool__(self): return False
+    def __getitem__(self, key): return self
+    def __setitem__(self, key, value): pass
+    def __enter__(self): return self
+    def __exit__(self, *a, **k): pass
+    
+    @classmethod
+    def __class_getitem__(cls, item): return cls
 
 class DummyCallback:
     def __init__(self, func=None, *a, **k):
@@ -63,7 +76,7 @@ class DummyQueue:
         self.is_async = is_async
         self.jobs = []
         self.count = 0
-        self.failed_job_registry = DummyClass()
+        self.failed_job_registry = AbsorbingMock()
         self.failed_job_registry.get_job_ids = lambda *a, **k: []
 
     @classmethod
@@ -141,7 +154,7 @@ if hasattr(redis.client, "PubSub"):
         return DummyThread()
     redis.client.PubSub.run_in_thread = dummy_run_in_thread
 
-create_mock("redis.commands.search", Search=DummyClass)
+create_mock("redis.commands.search", Search=AbsorbingMock)
 create_mock("redis.commands", search=sys.modules["redis.commands.search"])
 
 db_exc = dict(
@@ -158,7 +171,7 @@ create_mock("MySQLdb", **db_exc)
 create_mock("MySQLdb._mysql", escape_string=lambda *a, **k: b"")
 create_mock("MySQLdb.constants", ER=OmniMock, FIELD_TYPE=OmniMock)
 create_mock("MySQLdb.converters", conversions={})
-create_mock("MySQLdb.cursors", SSCursor=DummyClass)
+create_mock("MySQLdb.cursors", SSCursor=AbsorbingMock)
 
 # ── OS / Process Mocks ──────────────────────────────────────────────
 
@@ -172,8 +185,8 @@ sys.modules["psutil"].AccessDenied = Exception
 sys.modules["psutil"].NoSuchProcess = Exception
 
 # Frappe relies on pwd/grp for unix user checks which don't exist in Pyodide
-create_mock("pwd", getpwuid=lambda x: DummyClass())
-create_mock("grp", getgrgid=lambda x: DummyClass())
+create_mock("pwd", getpwuid=lambda x: AbsorbingMock())
+create_mock("grp", getgrgid=lambda x: AbsorbingMock())
 
 # ── orjson Mock (Rust extension → standard json) ────────────────────
 
@@ -220,7 +233,7 @@ class DummyDequeueStrategy:
     DEFAULT = None
 
 rq_mod = create_mock("rq",
-    Queue=DummyQueue, Worker=DummyClass, Callback=DummyCallback,
+    Queue=DummyQueue, Worker=AbsorbingMock, Callback=DummyCallback,
     get_current_job=lambda *a, **k: None
 )
 rq_mod.defaults = create_mock("rq.defaults", DEFAULT_WORKER_TTL=420)
@@ -234,14 +247,14 @@ rq_mod.logutils = create_mock("rq.logutils",
 rq_mod.timeouts = create_mock("rq.timeouts", JobTimeoutException=Exception)
 rq_mod.worker = create_mock("rq.worker",
     DequeueStrategy=DummyDequeueStrategy, StopRequested=Exception,
-    WorkerStatus=DummyClass
+    WorkerStatus=AbsorbingMock
 )
-rq_mod.worker_pool = create_mock("rq.worker_pool", WorkerPool=DummyClass)
+rq_mod.worker_pool = create_mock("rq.worker_pool", WorkerPool=AbsorbingMock)
 rq_mod.command = create_mock("rq.command", send_stop_job_command=lambda *a, **k: None)
 
 # ── Telemetry Mock ──────────────────────────────────────────────────
 
-create_mock("posthog", Posthog=DummyClass)
+create_mock("posthog", Posthog=AbsorbingMock)
 
 # ── Install Frappe ──────────────────────────────────────────────────
 
