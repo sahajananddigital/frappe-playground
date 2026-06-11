@@ -111,13 +111,30 @@ async function handleFetch(event) {
     const clientUrl = event.clientId ? await getClientUrl(event.clientId) : null;
     const clientScope = clientUrl ? scopeFromUrl(clientUrl) || parseScopedPath(clientUrl.pathname)?.scope : null;
     const requestPath = scopedPath?.path || url.pathname;
-    const scope = scopedPath?.scope
+    let scope = scopedPath?.scope
         || scopeFromUrl(url)
         || clientScopes.get(event.clientId)
         || clientScope
         || referrerPath?.scope
         || (referrerUrl && scopeFromUrl(referrerUrl))
         || (shouldRecoverScopeForNavigation(event.request, requestPath) && onlyActiveScope());
+
+    if (instances.size === 0) {
+        // Service Worker likely woke up from sleep and lost in-memory state.
+        // Broadcast to clients to re-establish the MessageChannel.
+        const clientsList = await clients.matchAll({ includeUncontrolled: true, type: "window" });
+        for (const client of clientsList) {
+            client.postMessage({ type: 'REQUEST_INIT_CHANNEL' });
+        }
+        // Wait up to 1s for main page to respond with INIT_CHANNEL
+        for (let i = 0; i < 20; i++) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            if (instances.size > 0) {
+                if (!scope) scope = onlyActiveScope();
+                break;
+            }
+        }
+    }
 
     if (scope) {
         if (event.clientId) {
