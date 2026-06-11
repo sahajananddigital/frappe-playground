@@ -256,6 +256,16 @@ rq_mod.command = create_mock("rq.command", send_stop_job_command=lambda *a, **k:
 
 create_mock("posthog", Posthog=AbsorbingMock)
 
+# ── Integration Mocks ───────────────────────────────────────────────
+
+create_mock("googleapiclient")
+create_mock("googleapiclient.discovery")
+create_mock("googleapiclient.errors")
+create_mock("google")
+create_mock("google.oauth2")
+create_mock("google.oauth2.credentials")
+create_mock("ldap3")
+
 # ── Install Frappe ──────────────────────────────────────────────────
 
 # Ensure frappe is actually importable by putting it in sys.modules manually if needed
