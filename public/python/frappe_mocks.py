@@ -19,7 +19,13 @@ def create_mock(name, **kwargs):
     sys.modules[name] = m
     return m
 
-class AbsorbingMock:
+class AbsorbingMeta(type):
+    def __getattr__(cls, name):
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return cls()
+
+class AbsorbingMock(metaclass=AbsorbingMeta):
     """A bulletproof mock that safely swallows any attribute access, method call, or iteration."""
     def __init__(self, *a, **k): pass
     def __getattr__(self, name): return self
@@ -42,6 +48,44 @@ class DummyCallback:
     def __call__(self, *a, **k):
         if self.func:
             return self.func(*a, **k)
+
+class AutoMockModule(ModuleType):
+    """Dynamically mocks module attributes, yielding exceptions for Errors and AbsorbingMocks for everything else."""
+    def __init__(self, name):
+        super().__init__(name)
+        self.__path__ = []
+
+    def __getattr__(self, name):
+        if name in ('__file__', '__path__', '__spec__', '__loader__'):
+            raise AttributeError
+        if name.endswith("Error") or name.endswith("Exception"):
+            # Return a dynamically created Exception class rather than base Exception
+            # This prevents `except HttpError:` from inadvertently swallowing legit TypeErrors/ValueErrors!
+            return type(name, (Exception,), {})
+        return AbsorbingMock()
+
+class AutoMockFinder:
+    """A sys.meta_path finder that intercepts and mocks imports for specified prefixes."""
+    def __init__(self, prefixes):
+        self.prefixes = prefixes
+
+    def find_spec(self, fullname, path, target=None):
+        for prefix in self.prefixes:
+            if fullname == prefix or fullname.startswith(prefix + "."):
+                import importlib.machinery
+                class AutoMockLoader:
+                    def create_module(self, spec):
+                        return AutoMockModule(fullname)
+                    def exec_module(self, module):
+                        def _getattr(name):
+                            if name in ('__file__', '__path__', '__spec__', '__loader__'):
+                                raise AttributeError
+                            if name.endswith("Error") or name.endswith("Exception"):
+                                return type(name, (Exception,), {})
+                            return AbsorbingMock()
+                        module.__getattr__ = _getattr
+                return importlib.machinery.ModuleSpec(fullname, AutoMockLoader())
+        return None
 
 class DummyJobStatus:
     QUEUED = "queued"
@@ -135,6 +179,20 @@ class FakeRedisWrapper(fakeredis.FakeRedis):
         kwargs.setdefault("server", shared_server)
         return super().from_url(*args, **kwargs)
 
+    def info(self, section=None):
+        return {
+            "used_memory_human": "1.00M",
+            "redis_version": "7.0.0",
+            "connected_clients": 1,
+            "used_memory_peak_human": "1.00M"
+        }
+
+    def execute_command(self, *args, **options):
+        if args and str(args[0]).lower() == "info":
+            # Redis-py's .info() method parses the raw string response from execute_command('INFO')
+            return b"used_memory_human:1.00M\r\nredis_version:7.0.0\r\nconnected_clients:1\r\nused_memory_peak_human:1.00M\r\n"
+        return super().execute_command(*args, **options)
+
 redis.Redis = FakeRedisWrapper
 redis.StrictRedis = FakeRedisWrapper
 redis.from_url = FakeRedisWrapper.from_url
@@ -159,12 +217,13 @@ if hasattr(redis.client, "PubSub"):
 create_mock("redis.commands.search", Search=AbsorbingMock)
 create_mock("redis.commands", search=sys.modules["redis.commands.search"])
 
-db_exc = dict(
-    Error=Exception, Warning=Exception, InterfaceError=Exception,
-    DatabaseError=Exception, DataError=Exception, OperationalError=Exception,
-    IntegrityError=Exception, InternalError=Exception, ProgrammingError=Exception,
-    NotSupportedError=Exception,
-)
+db_exc = {
+    name: type(name, (Exception,), {}) for name in [
+        "Error", "Warning", "InterfaceError", "DatabaseError", "DataError",
+        "OperationalError", "IntegrityError", "InternalError", "ProgrammingError",
+        "NotSupportedError"
+    ]
+}
 
 # ── MySQL Mocks ─────────────────────────────────────────────────────
 # (Even though we use sqlite, Frappe unconditionally imports MySQLdb in some places)
@@ -183,8 +242,8 @@ class DummyProcess:
     def terminate(self): pass
     def kill(self): pass
 sys.modules["psutil"].Process = DummyProcess
-sys.modules["psutil"].AccessDenied = Exception
-sys.modules["psutil"].NoSuchProcess = Exception
+sys.modules["psutil"].AccessDenied = type("AccessDenied", (Exception,), {})
+sys.modules["psutil"].NoSuchProcess = type("NoSuchProcess", (Exception,), {})
 
 # Frappe relies on pwd/grp for unix user checks which don't exist in Pyodide
 create_mock("pwd", getpwuid=lambda x: AbsorbingMock())
@@ -233,33 +292,39 @@ rq_mod = create_mock("rq",
 )
 rq_mod.defaults = create_mock("rq.defaults", DEFAULT_WORKER_TTL=420)
 rq_mod.exceptions = create_mock("rq.exceptions",
-    InvalidJobOperation=Exception, NoSuchJobError=Exception
+    InvalidJobOperation=type("InvalidJobOperation", (Exception,), {}),
+    NoSuchJobError=type("NoSuchJobError", (Exception,), {})
 )
 rq_mod.job = create_mock("rq.job", Job=DummyJob, JobStatus=DummyJobStatus)
 rq_mod.logutils = create_mock("rq.logutils",
     setup_loghandlers=lambda *a, **k: None
 )
-rq_mod.timeouts = create_mock("rq.timeouts", JobTimeoutException=Exception)
+rq_mod.timeouts = create_mock("rq.timeouts", JobTimeoutException=type("JobTimeoutException", (Exception,), {}))
 rq_mod.worker = create_mock("rq.worker",
-    DequeueStrategy=DummyDequeueStrategy, StopRequested=Exception,
+    DequeueStrategy=DummyDequeueStrategy, StopRequested=type("StopRequested", (Exception,), {}),
     WorkerStatus=AbsorbingMock
 )
 rq_mod.worker_pool = create_mock("rq.worker_pool", WorkerPool=AbsorbingMock)
 rq_mod.command = create_mock("rq.command", send_stop_job_command=lambda *a, **k: None)
+rq_mod.queue = create_mock("rq.queue", Queue=DummyQueue)
 
-# ── Telemetry Mock ──────────────────────────────────────────────────
+# ── Optional Integrations (Auto-Mocked) ─────────────────────────────
 
-create_mock("posthog", Posthog=AbsorbingMock)
-
-# ── Integration Mocks ───────────────────────────────────────────────
-
-create_mock("googleapiclient")
-create_mock("googleapiclient.discovery")
-create_mock("googleapiclient.errors")
-create_mock("google")
-create_mock("google.oauth2")
-create_mock("google.oauth2.credentials")
-create_mock("ldap3")
+# Automatically mock these entire trees so we don't have to stub them one-by-one.
+sys.meta_path.insert(0, AutoMockFinder([
+    "googleapiclient",
+    "google",
+    "ldap3",
+    "posthog",
+    "twilio",
+    "boto3",
+    "botocore",
+    "dropbox",
+    "braintree",
+    "stripe",
+    "plaid",
+    "sentry_sdk",
+]))
 
 # ── Install Frappe ──────────────────────────────────────────────────
 

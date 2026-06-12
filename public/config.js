@@ -23,6 +23,7 @@ export const BENCH_DIRECTORIES = [
     "/home/pyodide/bench/sites/site1/logs",
     "/home/pyodide/bench/sites/site1/private",
     "/home/pyodide/bench/sites/site1/private/files",
+    "/home/pyodide/bench/sites/site1/private/backups",
     "/home/pyodide/bench/sites/site1/public",
     "/home/pyodide/bench/sites/site1/public/files",
     "/home/pyodide/bench/logs",
