@@ -23,6 +23,7 @@ The app must be served from `localhost` or HTTPS with cross-origin isolation hea
 ```text
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: same-origin
 Access-Control-Allow-Origin: *
 ```
 
@@ -60,7 +61,7 @@ For a production-style local preview, build the Vue shell and start Vite preview
 
 ```bash
 npm run build
-npm run dev:preview
+npm start
 ```
 
 Open `http://localhost:8000/`.
@@ -105,7 +106,7 @@ Generated directories such as `storage/`, `public/assets/`, `public/frontend/`, 
 The Playwright suite uses `http://localhost:8000` as its base URL. After building the frontend with `npm run build` or `npm run deploy:prepare`, run the production preview before executing tests:
 
 ```bash
-npm run dev:preview
+npm start
 ```
 
 In another terminal:
