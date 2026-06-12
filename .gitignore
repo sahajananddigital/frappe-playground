@@ -28,3 +28,10 @@ scratch/
 
 # Test results (Playwright traces, HTML reports, and screenshots)
 tests/results/
+
+# pytest
+.pytest_cache
+
+# Python
+__pycache__/
+*.pyc

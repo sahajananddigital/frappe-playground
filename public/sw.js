@@ -5,23 +5,18 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(clients.claim()));
 
+
+
 const instances = new Map();
 const clientScopes = new Map();
-const STATIC_PATHS = new Set(["/worker.js", "/config.js", "/playground.js", "/sw.js"]);
+const STATIC_PATHS = new Set(["/worker.js", "/config.js", "/sw.js"]);
 const STATIC_PATH_PREFIXES = ["/storage", "/assets", "/pyodide", "/python"];
 const NODE_MODULES_ASSET_PREFIX = "/assets/frappe/node_modules/";
 const DEPLOY_SAFE_NODE_MODULES_ASSET_PREFIX = "/assets/frappe/runtime_modules/";
 const BACKEND_READY_TIMEOUT_MS = 90000;
 const BACKEND_READY_POLL_MS = 100;
 
-function parseScopedPath(pathname) {
-    const match = pathname.match(/^\/scope:([^/]+)(\/.*)?$/);
-    if (!match) return null;
-    return {
-        scope: decodeURIComponent(match[1]),
-        path: match[2] || "/",
-    };
-}
+
 
 function getInstance(scope) {
     if (!scope) return null;
@@ -34,17 +29,6 @@ function scopeFromUrl(url) {
 
 function onlyActiveScope() {
     return instances.size === 1 ? instances.keys().next().value : null;
-}
-
-function shouldRecoverScopeForNavigation(request, pathname) {
-    if (request.mode !== "navigate") return false;
-    if (isShellPath(pathname)) return false;
-    if (isStaticPath(pathname)) return false;
-    return true;
-}
-
-function isShellPath(pathname) {
-    return pathname === "/" || pathname === "/index.html";
 }
 
 function queryWithoutScope(url) {
@@ -67,20 +51,33 @@ function remapStaticPath(pathname) {
 }
 
 self.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "CLEAR_OTHER_INSTANCES") {
+        const keepScope = event.data.scope;
+        for (const scope of instances.keys()) {
+            if (scope !== keepScope) {
+                instances.delete(scope);
+                console.log(`[SW] Cleared stale instance: ${scope}`);
+            }
+        }
+        return;
+    }
+
     if (event.data && event.data.type === "INIT_CHANNEL") {
         const scope = event.data.scope;
-        const clientId = event.data.clientId;
+        const clientId = event.source ? event.source.id : event.data.clientId;
         const instance = {
             port: event.ports[0],
             ready: false,
+            clientId: clientId
         };
 
         instances.set(scope, instance);
+
         if (clientId) clientScopes.set(clientId, scope);
 
         instance.port.onmessage = (msgEvent) => {
             if (msgEvent.data.type === "READY") {
-                console.log("[SW] Received READY from worker:", scope);
+                console.log(`[SW] Received READY from worker: ${scope}`);
                 instance.ready = true;
             }
         };
@@ -90,11 +87,12 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
     if (event.request.url.startsWith(self.location.origin)) {
         const url = new URL(event.request.url);
-        const scopedPath = parseScopedPath(url.pathname);
-        const requestPath = scopedPath?.path || url.pathname;
 
-        if (!scopedPath && !scopeFromUrl(url) && isStaticPath(requestPath)) {
-            return;
+        if (!scopeFromUrl(url) && isStaticPath(url.pathname)) {
+            // We must still intercept if it's a node_modules path that needs remapping
+            if (!url.pathname.startsWith(NODE_MODULES_ASSET_PREFIX)) {
+                return;
+            }
         }
 
         event.respondWith(handleFetch(event));
@@ -107,35 +105,39 @@ async function handleFetch(event) {
     // Only intercept same-origin requests
     if (url.origin !== self.location.origin) return fetch(event.request);
 
-    const scopedPath = parseScopedPath(url.pathname);
-    const referrerUrl = event.request.referrer ? new URL(event.request.referrer) : null;
-    const referrerPath = referrerUrl ? parseScopedPath(referrerUrl.pathname) : null;
+    const isShellNavigation = event.request.mode === 'navigate' && url.pathname === '/';
+
+    // Prevent top-level navigations to the shell from inheriting a scope via referrer
+    if (isShellNavigation && !scopeFromUrl(url)) {
+        return fetch(event.request);
+    }
+
     const clientUrl = event.clientId ? await getClientUrl(event.clientId) : null;
-    const clientScope = clientUrl ? scopeFromUrl(clientUrl) || parseScopedPath(clientUrl.pathname)?.scope : null;
-    const requestPath = scopedPath?.path || url.pathname;
-    let scope = scopedPath?.scope
-        || scopeFromUrl(url)
+    const clientScope = clientUrl ? scopeFromUrl(clientUrl) : null;
+    const requestPath = url.pathname;
+    
+    let scope = scopeFromUrl(url)
         || clientScopes.get(event.clientId)
         || clientScope
-        || referrerPath?.scope
-        || (referrerUrl && scopeFromUrl(referrerUrl))
-        || (shouldRecoverScopeForNavigation(event.request, requestPath) && onlyActiveScope());
+        || (event.request.mode === 'navigate' && !isShellNavigation && !isStaticPath(requestPath) && onlyActiveScope());
 
     if (instances.size === 0) {
         console.log("[SW] Instances empty! Broadcasting REQUEST_INIT_CHANNEL via BroadcastChannel...");
         const channel = new BroadcastChannel('sw-recovery');
         channel.postMessage({ type: 'REQUEST_INIT_CHANNEL' });
         
-        // Wait up to 1s for main page to respond with INIT_CHANNEL
-        for (let i = 0; i < 20; i++) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+        // Wait up to 5s for main page to respond with INIT_CHANNEL
+        let retries = 0;
+        while (retries < 50) {
+            await new Promise(resolve => setTimeout(resolve, 100));
             if (instances.size > 0) {
                 console.log("[SW] Recovered instance!");
                 if (!scope) scope = onlyActiveScope();
                 break;
             }
+            retries++;
         }
-        if (instances.size === 0) console.log("[SW] Failed to recover instances after 1s!");
+        if (instances.size === 0) console.log("[SW] Failed to recover instances after 5s!");
     }
 
     if (scope) {
@@ -158,21 +160,21 @@ async function handleFetch(event) {
             credentials: event.request.credentials
         };
 
-        if (!scopedPath && !scopeFromUrl(url) && strippedUrl.href === event.request.url) {
+        if (!scopeFromUrl(url) && strippedUrl.href === event.request.url) {
             return fetch(event.request);
         }
 
         return fetch(strippedUrl.href, requestOptions);
     }
     
-
     if (!scope) {
-        if (event.request.destination === 'iframe') {
-            return new Response("<script>window.top.location.reload();</script>", { headers: { "Content-Type": "text/html" } });
-        }
+        console.log(`[SW] Fetching natively: ${event.request.url}`);
         return fetch(event.request);
     }
 
+    console.log(`[SW] Waiting for instance ready for scope: ${scope}`);
+    const isReady = await waitForInstanceReady(scope);
+    const instance = getInstance(scope);
     // Mock Socket.io so the frontend connects successfully and stops spamming errors.
     if (requestPath.startsWith("/socket.io/")) {
         if (event.request.method === "POST") {
@@ -210,11 +212,6 @@ async function callPythonHandler(req, scope, requestPath, query) {
         console.error("[SW] Worker port not initialized for scope:", scope);
         return new Response("Service Worker not fully initialized for this tab", { status: 503 });
     }
-    
-    if (!await waitForInstanceReady(instance, scope)) {
-        console.error("[SW] Pyodide worker not ready after 90s. Aborting request:", requestPath);
-        return new Response("Pyodide backend timeout", { status: 504 });
-    }
 
     const payload = {
         method: req.method,
@@ -229,6 +226,7 @@ async function callPythonHandler(req, scope, requestPath, query) {
 
     return new Promise((resolve) => {
         const channel = new MessageChannel();
+
         channel.port1.onmessage = (msgEvent) => {
             const { status, headers, body } = msgEvent.data;
             const resHeaders = new Headers(headers);
@@ -252,7 +250,7 @@ function scopeRedirectLocation(headers, scope) {
     try {
         const scopedLocation = new URL(location, self.location.origin);
         if (scopedLocation.origin !== self.location.origin) return;
-        if (isShellPath(scopedLocation.pathname)) return;
+        if (scopedLocation.pathname === '/') return;
         if (isStaticPath(scopedLocation.pathname)) return;
 
         scopedLocation.searchParams.set("__scope", scope);
@@ -262,14 +260,17 @@ function scopeRedirectLocation(headers, scope) {
     }
 }
 
-async function waitForInstanceReady(instance, scope) {
-    if (instance.ready) return true;
+async function waitForInstanceReady(scope) {
+    let instance = getInstance(scope);
+    if (instance && instance.ready) return true;
 
-    console.log("[SW] Waiting for Pyodide worker to be ready:", scope);
+    console.log(`[SW] Waiting for Pyodide worker to be ready: ${scope}`);
     const deadline = Date.now() + BACKEND_READY_TIMEOUT_MS;
-    while (!instance.ready && Date.now() < deadline) {
+    while (Date.now() < deadline) {
+        instance = getInstance(scope);
+        if (instance && instance.ready) return true;
         await new Promise(resolve => setTimeout(resolve, BACKEND_READY_POLL_MS));
     }
 
-    return instance.ready;
+    return false;
 }

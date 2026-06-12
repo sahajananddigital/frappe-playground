@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Icons from 'unplugin-icons/vite'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -68,6 +69,7 @@ export default defineConfig({
   base: '/',
   plugins: [
     vue(),
+    Icons({ compiler: 'vue3' }),
     {
       name: 'frappe-playground-frontend',
       buildStart() {
@@ -83,6 +85,12 @@ export default defineConfig({
     assetsDir: 'frontend',
     emptyOutDir: false,
     sourcemap: true,
+    rollupOptions: {
+      onwarn(warning, defaultHandler) {
+        if (warning.code === 'INVALID_ANNOTATION') return
+        defaultHandler(warning)
+      },
+    },
   },
   resolve: {
     alias: {
@@ -90,7 +98,6 @@ export default defineConfig({
         projectRoot,
         'node_modules/frappe-ui/src/components',
       ),
-      '~icons/lucide/x': path.join(projectRoot, 'src/components/LucideXIcon.vue'),
     },
   },
   server: {

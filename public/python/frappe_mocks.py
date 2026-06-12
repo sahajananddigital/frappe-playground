@@ -92,6 +92,8 @@ class DummyQueue:
 
 
 
+# OmniMock is needed instead of AbsorbingMock specifically for MySQLdb constant tables
+# (e.g. MySQLdb.constants.ER or FIELD_TYPE) which require `0` for numeric comparisons in Frappe.
 class _OmniMock:
     """Returns 0 for any attribute access — used for MySQLdb constant tables."""
     def __getattr__(self, name):
@@ -219,13 +221,6 @@ create_mock("psycopg2.extensions", ISOLATION_LEVEL_REPEATABLE_READ=0)
 create_mock("psycopg2.sql")
 create_mock("psycopg2.errorcodes")
 create_mock("psycopg2.errors")
-
-import sqlite3
-sqlite3.ProgrammingError = Exception
-sqlite3.OperationalError = Exception
-sqlite3.InternalError = Exception
-sqlite3.DataError = Exception
-sqlite3.NotSupportedError = Exception
 
 # ── RQ (Redis Queue) Mocks ──────────────────────────────────────────
 

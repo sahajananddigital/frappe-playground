@@ -1,44 +1,26 @@
-import io, json, traceback, os, sys
+import io, traceback, os, sys
+import mimetypes
+import sqlite3
+from http.cookies import SimpleCookie
 import frappe
+import frappe.auth
 from frappe.app import application
+
+BENCH_SITES_PATH = "/home/pyodide/bench/sites"
+SITE_DB_PATH = "/home/pyodide/bench/sites/site1/db/site1.db"
 
 def handle_request(req):
     """
     Simulates a WSGI environment, calls the Frappe application, 
     and returns a serialized Response dictionary.
     """
+    if hasattr(req, "to_py"):
+        req = req.to_py()
     global _cookie_jar
     
-    # 1. Debug Routes Interceptor
-    if req["path"] == "/debug_cache":
+    # 1. Handle Static Files
+    if req["path"].startswith("/files/"):
         try:
-            import inspect
-            cc_dir = dir(frappe.client_cache)
-            cc_type = type(frappe.client_cache).__name__
-            with open("/home/pyodide/frappe_env/frappe/utils/redis_wrapper.py") as f:
-                wrapper_src = f.read()
-            body_parts = [json.dumps({"type": cc_type, "dir": cc_dir, "src_len": len(wrapper_src)}).encode("utf-8")]
-            return {"status": "200 OK", "headers": [], "body": b"".join(body_parts)}
-        except Exception as e:
-            return {"status": "500 Internal Server Error", "headers": [], "body": str(e).encode("utf-8")}
-            
-    elif req["path"] == "/debug_cookies":
-        try:
-            return {"status": "200 OK", "headers": [], "body": str(_cookie_jar).encode("utf-8")}
-        except NameError:
-            return {"status": "200 OK", "headers": [], "body": b"Cookie jar not initialized."}
-            
-    elif req["path"] == "/find_redis":
-        try:
-            with open("/home/pyodide/frappe_env/frappe/sessions.py", "r") as f:
-                lines = f.readlines()[135:160]
-            return {"status": "200 OK", "headers": [], "body": "".join(lines).encode("utf-8")}
-        except Exception as e:
-            return {"status": "500 Internal Server Error", "headers": [], "body": str(e).encode("utf-8")}
-
-    elif req["path"].startswith("/files/"):
-        try:
-            import mimetypes
             file_path = "/home/pyodide/bench/sites/site1/public" + req["path"]
             with open(file_path, "rb") as f:
                 content = f.read()
@@ -52,15 +34,14 @@ def handle_request(req):
             return {"status": 404, "headers": [], "body": b"File not found in MEMFS"}
 
     # 2. Re-init Frappe environment variables per request
-    os.chdir("/home/pyodide/bench/sites")
-    os.environ["SITES_PATH"] = "/home/pyodide/bench/sites"
+    os.chdir(BENCH_SITES_PATH)
+    os.environ["SITES_PATH"] = BENCH_SITES_PATH
     os.environ["FRAPPE_SITE"] = "site1"
 
     # 3. Build WSGI Environment Dictionary
     # We must properly format the browser-sent cookies alongside our _cookie_jar
     _browser_cookies = req["headers"].get("cookie", "") or ""
     
-    from http.cookies import SimpleCookie
     _parsed = SimpleCookie(_browser_cookies)
     
     if '_cookie_jar' not in globals():
@@ -144,9 +125,7 @@ def handle_request(req):
         ):
             # Frappe marks the app setup-complete after its own setup commit in this
             # WASM/SQLite path. Persist the final flags before the redirect to /desk.
-            import sqlite3
-
-            conn = sqlite3.connect("/home/pyodide/bench/sites/site1/db/site1.db")
+            conn = sqlite3.connect(SITE_DB_PATH)
             try:
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute(
@@ -159,7 +138,7 @@ def handle_request(req):
                     "update tabDefaultValue set defvalue='workspace' where parent='__default' and defkey='desktop:home_page'"
                 )
                 conn.commit()
-                globals().get("_dummy_redis_store", {}).clear()
+
             finally:
                 conn.close()
 
@@ -188,18 +167,12 @@ def handle_request(req):
         "body": body_bytes
     }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 5. Initialize Frappe Environment for WASM
-# ──────────────────────────────────────────────────────────────────────────────
-
-os.chdir("/home/pyodide/bench/sites")
-os.environ["SITES_PATH"] = "/home/pyodide/bench/sites"
+os.chdir(BENCH_SITES_PATH)
+os.environ["SITES_PATH"] = BENCH_SITES_PATH
 os.environ["FRAPPE_SITE"] = "site1"
 
-import frappe
-frappe.init(site="site1", sites_path="/home/pyodide/bench/sites")
+frappe.init(site="site1", sites_path=BENCH_SITES_PATH)
 frappe.connect()
 
-import frappe.auth
 def bypass_csrf(*args, **kwargs): return True
 frappe.auth.validate_csrf_token = bypass_csrf

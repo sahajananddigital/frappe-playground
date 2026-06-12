@@ -12,17 +12,17 @@
     "predeploy": "npm run deploy:prepare",
     "deploy": "bash scripts/deploy.sh",
     "test": "npm run test:e2e",
-    "test:e2e": "playwright test tests/e2e --project=chromium --project=webkit",
-    "debug:vfs": "node tests/debug/inspect_vfs.js",
-    "debug:memory": "node tests/debug/inspect_memory.js"
+    "test:e2e": "playwright test tests/e2e --project=chromium --project=webkit"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.111",
     "@playwright/test": "^1.60.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "autoprefixer": "^10.5.0",
     "playwright": "^1.60.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.17",
+    "unplugin-icons": "^23.0.1",
     "vite": "^8.0.14",
     "wrangler": "^4.95.0"
   },

@@ -50,6 +50,7 @@ async function getFrappeFrame(page) {
 
 async function loginAsAdministrator(page) {
     const frame = await getFrappeFrame(page);
+    console.log(`[TEST] iframe URL before login: ${frame.url()}`);
     await frame.waitForSelector('#login_email', { timeout: 60000 });
     await frame.fill('#login_email', ADMIN_EMAIL);
     await frame.fill('#login_password', ADMIN_PASSWORD);
@@ -93,7 +94,7 @@ async function waitForSetupWizardOrDesk(page) {
 
         if (deskState.hasSetupWizard) {
             state = 'wizard';
-        } else if (deskState.setupComplete || deskState.href.includes('/desk')) {
+        } else if (deskState.setupComplete && deskState.href.includes('/desk')) {
             state = 'desk';
         } else {
             state = 'loading';

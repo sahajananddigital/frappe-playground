@@ -17,7 +17,6 @@ const showIntroDialog = ref(true)
 let addressTimer = 0
 let pyWorker = null
 
-const normalizedAddress = computed(() => normalizeAddress(address.value))
 
 function getOrCreateInstanceId() {
   let id = sessionStorage.getItem(sessionKey)
@@ -78,7 +77,7 @@ function startAddressSync() {
 
 function navigateFrame() {
   if (!ready.value) return
-  frameSrc.value = scopedFrameUrl(normalizedAddress.value)
+  frameSrc.value = scopedFrameUrl(normalizeAddress(address.value))
   nextTick(syncAddressFromFrame)
 }
 
@@ -88,7 +87,7 @@ function reloadFrame() {
   try {
     iframeRef.value?.contentWindow?.location.reload()
   } catch (_) {
-    frameSrc.value = scopedFrameUrl(normalizedAddress.value)
+    frameSrc.value = scopedFrameUrl(normalizeAddress(address.value))
   }
 }
 
@@ -104,7 +103,18 @@ async function initPlayground() {
   const session = getOrCreateInstanceId()
   instanceId.value = session.id
 
+  let isInitialLoad = !navigator.serviceWorker.controller
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (isInitialLoad) {
+      isInitialLoad = false
+    } else {
+      console.log("[Playground] Service Worker updated! Auto-reloading to apply changes...")
+      window.location.reload()
+    }
+  })
+
   const swRegistration = await navigator.serviceWorker.register('/sw.js')
+
   if (!navigator.serviceWorker.controller) {
     setBootLog('Connecting service worker...')
     await new Promise(resolve => {
@@ -122,20 +132,43 @@ async function initPlayground() {
 
   pyWorker = new Worker('/worker.js', { type: 'module' })
 
-  const channel = new MessageChannel()
-  navigator.serviceWorker.controller.postMessage(
-    { type: 'INIT_CHANNEL', scope: session.id },
-    [channel.port1],
-  )
+  function setupChannel() {
+    const sendInit = (sw) => {
+      if (sw) {
+        const channel = new MessageChannel()
+        
+        sw.postMessage({ type: 'INIT_CHANNEL', scope: session.id }, [channel.port1])
+        if (session.freshSession) {
+          sw.postMessage({ type: 'CLEAR_OTHER_INSTANCES', scope: session.id })
+        }
+        
+        pyWorker.postMessage(
+          {
+            type: 'INIT_CHANNEL',
+            freshSession: session.freshSession,
+            scope: session.id,
+          },
+          [channel.port2],
+        )
+      }
+    }
 
-  pyWorker.postMessage(
-    {
-      type: 'INIT_CHANNEL',
-      freshSession: session.freshSession,
-      scope: session.id,
-    },
-    [channel.port2],
-  )
+    if (navigator.serviceWorker.controller) {
+      sendInit(navigator.serviceWorker.controller)
+    } else {
+      navigator.serviceWorker.ready.then(reg => sendInit(reg.active))
+    }
+  }
+
+  setupChannel()
+
+  window.swRecoveryChannel = new BroadcastChannel('sw-recovery')
+  window.swRecoveryChannel.onmessage = event => {
+    if (event.data?.type === 'REQUEST_INIT_CHANNEL') {
+      console.log("[Playground] SW requested channel re-init (via BroadcastChannel). Re-establishing...")
+      setupChannel()
+    }
+  }
 
   pyWorker.onmessage = event => {
     if (event.data?.type === 'LOG') {

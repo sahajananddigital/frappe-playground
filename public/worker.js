@@ -228,9 +228,11 @@ async function exportCookieJarJson() {
 async function restoreCookieJarFromIDB() {
     if (!persistedCookieJarJson) return;
 
+    pyodide.globals.set("temp_cookie_json", persistedCookieJarJson);
     await pyodide.runPythonAsync(`
         import json
-        _cookie_jar = json.loads(${JSON.stringify(persistedCookieJarJson)})
+        _cookie_jar = json.loads(temp_cookie_json)
+        del temp_cookie_json
     `);
 }
 
@@ -242,6 +244,7 @@ async function bootPython() {
     await configureFrappeEnvironment();
     
     self.postMessage({ type: "LOG", message: "Frappe booted successfully!" });
+    console.log("[WORKER] bootPython complete. Sending READY to main thread.");
     self.postMessage({ type: "READY" });
 }
 
@@ -319,7 +322,7 @@ async function fetchAndMountFilesystem() {
     } else {
         await repairCompletedSiteDefaults(SITE_DB_PATH);
     }
-
+    
     // Write config files (these are static and always come from the server)
     pyodide.FS.writeFile(ASSETS_JSON_PATH, assetsJson);
     for (const [path, contents] of Object.entries(STATIC_SITE_FILES)) {
@@ -345,25 +348,15 @@ async function configureFrappeEnvironment() {
 
 // ─── WSGI Request Handler ───────────────────────────────────────────────────
 
+let bootPromise = null;
+
 self.onmessage = async (event) => {
     if (event.data && event.data.type === "INIT_CHANNEL") {
         fromServiceWorkerPort = event.ports[0];
-        isFreshSession = event.data.freshSession !== false;
-        instanceScope = event.data.scope || "default";
         
-        // Wait for Pyodide to finish booting BEFORE handling ANY requests
-        try {
-            await bootPython();
-            fromServiceWorkerPort.postMessage({ type: "READY" });
-        } catch (err) {
-            console.error("Failed to boot Pyodide:", err);
-            self.postMessage({
-                type: "ERROR",
-                message: err?.message
-                    ? `Frappe runtime failed to start: ${err.message}`
-                    : "Frappe runtime failed to start.",
-            });
-            return;
+        if (!bootPromise) {
+            isFreshSession = event.data.freshSession !== false;
+            instanceScope = event.data.scope || "default";
         }
 
         const requestQueue = [];
@@ -374,27 +367,22 @@ self.onmessage = async (event) => {
             processing = true;
 
             const { req, responsePort } = requestQueue.shift();
-            console.log("WORKER PROCESSING REQUEST:", req.method, req.path);
 
             try {
-                // Initialize the Python function proxy if not already done
-                if (!self.pyHandleRequest) {
-                    self.pyHandleRequest = pyodide.globals.get("handle_request");
+                const reqMap = new Map(Object.entries(req));
+                if (req.headers) {
+                    reqMap.set("headers", new Map(Object.entries(req.headers)));
                 }
+                const pyReq = pyodide.toPy(reqMap);
                 
-                // Convert JS request to a Python Dict proxy
-                const pyReq = pyodide.toPy(req);
+                pyodide.globals.set("current_req", pyReq);
+                const pyResponse = pyodide.runPython("handle_request(current_req)");
                 
-                // Call the native Python WSGI handler directly
-                const pyResponse = self.pyHandleRequest(pyReq);
-                
-                // Convert the returned Python Dict back to a native JS Map/Object
                 const jsResponse = pyResponse.toJs({ dict_converter: Object.fromEntries });
                 
-                // Cleanup proxies to prevent memory leaks
                 pyReq.destroy();
                 pyResponse.destroy();
-                
+
                 const hasSetCookie = (jsResponse.headers || []).some(([name]) => name.toLowerCase() === "set-cookie");
                 const shouldPersist = !["GET", "HEAD", "OPTIONS"].includes(req.method) || hasSetCookie;
 
@@ -403,15 +391,9 @@ self.onmessage = async (event) => {
                     await saveStateToIDB(SITE_DB_PATH, await exportCookieJarJson());
                 }
                 
-                let bodyLog = "[empty body]";
-                if (jsResponse.body && jsResponse.body.length > 0) {
-                    const textStr = new TextDecoder("utf-8").decode(jsResponse.body);
-                    bodyLog = textStr.length > 300 ? textStr.substring(0, 300) + "... [truncated]" : textStr;
-                }
-                console.log("WORKER RESPONSE:", jsResponse.status, "\\n", bodyLog);
+                console.log(`[Worker] Handled request: ${req.path} -> ${jsResponse.status}`);
                 responsePort.postMessage(jsResponse);
             } catch (err) {
-                // If Pyodide itself crashes, return a 500 so the SW doesn't hang
                 responsePort.postMessage({
                     status: 500,
                     headers: { "Content-Type": "text/plain" },
@@ -430,6 +412,23 @@ self.onmessage = async (event) => {
             });
             processQueue();
         };
-        
+
+        try {
+            if (!bootPromise) {
+                bootPromise = bootPython();
+            }
+            await bootPromise;
+            fromServiceWorkerPort.postMessage({ type: "READY" });
+        } catch (err) {
+            bootPromise = null;
+            console.error("Failed to boot Pyodide:", err);
+            self.postMessage({
+                type: "ERROR",
+                message: err?.message
+                    ? `Frappe runtime failed to start: ${err.message}`
+                    : "Frappe runtime failed to start.",
+            });
+            return;
+        }
     }
 };
