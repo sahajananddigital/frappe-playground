@@ -61,10 +61,38 @@ function scopedFrameUrl(value) {
   return `${parsed.pathname}${parsed.search}${parsed.hash}`
 }
 
+function prefillLoginIfApplicable() {
+  try {
+    const win = iframeRef.value?.contentWindow
+    const doc = win?.document
+    if (!doc) return
+
+    const usr = doc.querySelector('#login_email')
+    const pwd = doc.querySelector('#login_password')
+    if (usr && pwd) {
+      if (!usr.value || usr.value !== 'Administrator') {
+        usr.value = 'Administrator'
+        usr.setAttribute('value', 'Administrator')
+        usr.dispatchEvent(new Event('input', { bubbles: true }))
+        usr.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      if (!pwd.value || pwd.value !== 'admin') {
+        pwd.value = 'admin'
+        pwd.setAttribute('value', 'admin')
+        pwd.dispatchEvent(new Event('input', { bubbles: true }))
+        pwd.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }
+  } catch (_) {
+    // ignore cross-origin or transient access errors
+  }
+}
+
 function syncAddressFromFrame() {
   try {
     const href = iframeRef.value?.contentWindow?.location?.href
     if (href) address.value = stripScope(href)
+    prefillLoginIfApplicable()
   } catch (_) {
     // The playground is expected to be same-origin, but ignore transient frame swaps.
   }

@@ -11,7 +11,10 @@ export const SITE_CONFIG = {
     pause_scheduler: 1,
     disable_async: 1,
     login_with_email_link: 0,
-    trigger_site_setup_in_background: 0
+    trigger_site_setup_in_background: 0,
+    prefill_login_credentials: 1,
+    prefill_login_user: "Administrator",
+    prefill_login_pwd: "admin"
 };
 
 export const BENCH_DIRECTORIES = [
