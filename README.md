@@ -29,6 +29,12 @@ Access-Control-Allow-Origin: *
 
 Vite sets these headers during local development and preview. Cloudflare Pages uses `public/_headers`.
 
+### Default Credentials
+
+The playground preconfigures a streamlined authentication flow for instant experimentation:
+
+The login form is automatically prefilled with username `Administrator` and password `admin` via the Vue shell (`src/App.vue`).
+
 ## Getting Started
 
 Install dependencies:
@@ -89,11 +95,13 @@ frappe-playground/
 |   `-- storage/            # Generated runtime archive and starter database
 |-- scripts/
 |   |-- build.sh            # Docker runtime build
+|   |-- check-limits.sh     # Asset size limit verification
+|   |-- deploy.sh           # Cloudflare Pages deployment
+|   |-- export-runtime-assets.py # Frappe asset exporter for build
 |   |-- prepare.sh          # Copies generated runtime assets into public/
 |   `-- prepare-deploy.sh   # Full deploy preparation flow
 |-- tests/
-|   |-- e2e/                # Playwright browser flows
-|   `-- debug/              # Runtime inspection helpers
+|   `-- e2e/                # Playwright browser flows
 |-- Dockerfile.build
 |-- vite.config.mjs
 `-- playwright.config.js
@@ -116,16 +124,6 @@ npm run test
 ```
 
 The e2e tests cover boot, login, setup wizard completion, Desk stability, scoped reload behavior, and the mobile shell.
-
-Debug helpers can inspect the running Pyodide environment:
-
-```bash
-# Inspect a file inside the Pyodide virtual filesystem
-npm run debug:vfs /home/pyodide/bench/sites/site1/site_config.json
-
-# Dump the active in-browser cookie jar
-npm run debug:memory
-```
 
 ## Deployment
 
