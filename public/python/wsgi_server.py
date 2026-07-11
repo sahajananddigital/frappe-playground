@@ -30,6 +30,17 @@ class FrappeWSGIHandler:
         def bypass_csrf(*args, **kwargs): return True
         frappe.auth.validate_csrf_token = bypass_csrf
 
+        # Allow site_config (frappe.conf) to override System Settings (e.g. login_with_email_link: 0)
+        import frappe.core.doctype.system_settings.system_settings as _sys_settings_mod
+        if not hasattr(_sys_settings_mod, "_orig_get_system_settings"):
+            _sys_settings_mod._orig_get_system_settings = _sys_settings_mod.get_system_settings
+            def _get_system_settings_override(key: str):
+                if hasattr(frappe, "conf") and frappe.conf and key in frappe.conf:
+                    return frappe.conf.get(key)
+                return _sys_settings_mod._orig_get_system_settings(key)
+            _sys_settings_mod.get_system_settings = _get_system_settings_override
+            frappe.get_system_settings = _get_system_settings_override
+
     def serve_static_file(self, req, site_name):
         """Serve a static file directly from Pyodide's MEMFS."""
         try:
