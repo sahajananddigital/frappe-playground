@@ -58,7 +58,7 @@ USER frappe
 RUN bench init --frappe-branch ${FRAPPE_VERSION} --skip-redis-config-generation  --python python3 test-bench \
     && cd test-bench \
     && bench new-site playground.local --db-type sqlite --admin-password admin \
-    && python3 -c "import sqlite3; conn = sqlite3.connect('test-bench/sites/playground.local/db/playground.local.db'); conn.execute(\"UPDATE tabSingles SET value='0' WHERE doctype='System Settings' AND field='login_with_email_link'\"); conn.commit()"
+    && bench --site playground.local execute frappe.db.set_single_value --args "('System Settings', 'login_with_email_link', 0)"
 USER root
 # 6. Expose entry point compilation commands
 CMD cp -r /workspace/test-bench/env/lib/python3.14/site-packages/pypika /workspace/archive_root/ && \
